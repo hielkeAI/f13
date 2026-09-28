@@ -47,6 +47,8 @@ It also tracks the supplied F13 and Unlimited TikTok and Twitch profiles. TikTok
 
 The bot updates every 30 minutes by default. Use `/subs` in the configured Discord channel for an immediate refresh, or `/graph` to send a zoomed chart for the last 30 days. Use `/graph days:90` (up to 3,650 days) for a longer history. Change `UPDATE_INTERVAL_MINUTES` in `.env` to adjust the schedule.
 
+Commands are synchronized globally, so they become available in every server where the bot is installed. Global Discord command updates can take a little time to appear after a restart.
+
 ## Configuration commands
 
 Server members with **Manage Server** permission can use:

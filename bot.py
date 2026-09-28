@@ -138,6 +138,16 @@ DEFAULT_SCHOOL_PORTALS = {
     "classcharts": "https://www.classcharts.com/",
 }
 SCHOOL_PORTALS = {**DEFAULT_SCHOOL_PORTALS, **saved_config.get("school_portals", {})}
+DEFAULT_PORTAL_STATE = {
+    "enabled": True,
+    "welcome_title": "Welcome aboard Transdev Route 36! 🎉",
+    "welcome_description": "Welcome {member_mention}!\n\nYou are member **{member_count}** of {guild_name}.",
+    "welcome_footer": "Transdev Route 36 community welcome",
+}
+COMMUNITY_CONFIG.setdefault("portal_enabled", DEFAULT_PORTAL_STATE["enabled"])
+COMMUNITY_CONFIG.setdefault("welcome_title", DEFAULT_PORTAL_STATE["welcome_title"])
+COMMUNITY_CONFIG.setdefault("welcome_description", DEFAULT_PORTAL_STATE["welcome_description"])
+COMMUNITY_CONFIG.setdefault("welcome_footer", DEFAULT_PORTAL_STATE["welcome_footer"])
 
 intents = discord.Intents.default()
 intents.members = True
@@ -164,24 +174,49 @@ def level_for_xp(xp: int) -> int:
     return max(0, int((xp / 100) ** 0.5))
 
 
+def xp_value(data: dict[str, Any] | None) -> int:
+    if not data:
+        return 0
+    try:
+        return max(0, int(data.get("xp", 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def normalized_user_data(data: dict[str, Any] | None) -> dict[str, Any]:
+    clean = data or {}
+    xp = xp_value(clean)
+    clean["xp"] = xp
+    clean["level"] = level_for_xp(xp)
+    return clean
+
+
 def community_channel_id(name: str) -> int | None:
     value = COMMUNITY_CONFIG.get(name)
     return int(value) if value else None
 
 
 def build_welcome_embed(member: discord.Member) -> discord.Embed:
+    welcome_title = COMMUNITY_CONFIG.get("welcome_title", "Welcome aboard Transdev Route 36! 🎉")
+    welcome_description = COMMUNITY_CONFIG.get(
+        "welcome_description",
+        "Welcome {member_mention}!\n\nYou are member **{member_count}** of {guild_name}.",
+    )
+    welcome_footer = COMMUNITY_CONFIG.get("welcome_footer", "Transdev Route 36 community welcome")
+    description = welcome_description.format(
+        member_mention=member.mention,
+        member_count=f"{member.guild.member_count:,}",
+        guild_name=member.guild.name,
+    )
     embed = discord.Embed(
-        title="Welcome aboard Transdev Route 36! 🎉",
-        description=(
-            f"Welcome {member.mention}!\n\n"
-            f"You are member **{member.guild.member_count:,}** of {member.guild.name}."
-        ),
+        title=welcome_title,
+        description=description,
         colour=discord.Colour.green(),
     )
     embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
     embed.set_thumbnail(url=member.display_avatar.url)
     embed.set_image(url=COMMUNITY_CONFIG.get("welcome_image_url", DEFAULT_WELCOME_BUS_IMAGE))
-    embed.set_footer(text="Transdev Route 36 community welcome")
+    embed.set_footer(text=welcome_footer)
     return embed
 
 
@@ -1054,11 +1089,8 @@ async def on_ready() -> None:
         bot.add_view(TicketView())
         bot.add_view(TicketCloseView())
         bot.ticket_views_registered = True
-    target = await get_target_channel()
-    if target and target.guild:
-        bot.tree.copy_global_to(guild=target.guild)
-        await bot.tree.sync(guild=target.guild)
-        logger.info("Synced slash commands to guild %s", target.guild.id)
+    await bot.tree.sync()
+    logger.info("Synced slash commands globally to %s guilds", len(bot.guilds))
     if not update_loop.is_running():
         update_loop.start()
     if not bus_update_loop.is_running():
@@ -1273,7 +1305,7 @@ async def monitor_config_command(
 async def level_command(interaction: discord.Interaction) -> None:
     """Show the invoking member's level."""
     state = load_community_state()
-    user = state.get("levels", {}).get(str(interaction.user.id), {"xp": 0, "level": 0})
+    user = normalized_user_data(state.get("levels", {}).get(str(interaction.user.id)))
     await interaction.response.send_message(
         f"{interaction.user.mention} is level **{user.get('level', 0)}** with **{user.get('xp', 0)} XP**.",
         ephemeral=True,
@@ -1296,9 +1328,9 @@ async def help_command(interaction: discord.Interaction) -> None:
 @app_commands.guild_only()
 async def sparx_command(interaction: discord.Interaction) -> None:
     """Post official or server-configured Sparx resource links."""
-    if not COMMUNITY_CONFIG.get("sparx_enabled", True):
+    if not COMMUNITY_CONFIG.get("portal_enabled", True):
         await interaction.response.send_message(
-            "Sparx links are disabled on this server.", ephemeral=True
+            "Portal links are disabled on this server.", ephemeral=True
         )
         return
     embed = discord.Embed(
@@ -1316,47 +1348,72 @@ async def sparx_command(interaction: discord.Interaction) -> None:
     await interaction.response.send_message(embed=embed, view=view)
 
 
-@bot.tree.command(name="sparx-disable", description="Disable Sparx links on this server")
+@bot.tree.command(name="portal-config", description="Configure all school portal links and toggle them on or off")
 @app_commands.guild_only()
 @app_commands.checks.has_permissions(manage_guild=True)
-async def sparx_disable_command(interaction: discord.Interaction) -> None:
-    COMMUNITY_CONFIG["sparx_enabled"] = False
-    save_config()
-    await interaction.response.send_message("Sparx links disabled.", ephemeral=True)
-
-
-@bot.tree.command(name="sparx-enable", description="Enable Sparx links on this server")
-@app_commands.guild_only()
-@app_commands.checks.has_permissions(manage_guild=True)
-async def sparx_enable_command(interaction: discord.Interaction) -> None:
-    COMMUNITY_CONFIG["sparx_enabled"] = True
-    save_config()
-    await interaction.response.send_message("Sparx links enabled.", ephemeral=True)
-
-
-@bot.tree.command(name="sparx-config", description="Configure Sparx Maths, Science, and Reader links")
-@app_commands.guild_only()
-@app_commands.checks.has_permissions(manage_guild=True)
-async def sparx_config_command(
+@app_commands.describe(
+    maths_url="Optional Sparx Maths URL",
+    science_url="Optional Sparx Science URL",
+    reader_url="Optional Sparx Reader URL",
+    dr_frost_url="Optional Dr Frost URL",
+    arbor_url="Optional Arbor URL",
+    sims_url="Optional SIMS URL",
+    bromcom_url="Optional Bromcom URL",
+    classcharts_url="Optional ClassCharts URL",
+    enabled="Turn the portal links on or off for this server",
+)
+async def portal_config_command(
     interaction: discord.Interaction,
-    maths_url: str,
-    science_url: str,
-    reader_url: str,
+    maths_url: str | None = None,
+    science_url: str | None = None,
+    reader_url: str | None = None,
+    dr_frost_url: str | None = None,
+    arbor_url: str | None = None,
+    sims_url: str | None = None,
+    bromcom_url: str | None = None,
+    classcharts_url: str | None = None,
+    enabled: bool = True,
 ) -> None:
-    """Set school-specific Sparx portal URLs."""
-    urls = {"maths": maths_url, "science": science_url, "reader": reader_url}
-    if not all(url.startswith(("http://", "https://")) for url in urls.values()):
-        await interaction.response.send_message("All Sparx links must start with http:// or https://.", ephemeral=True)
+    """Update all portal links in one place and keep them available or disabled from a single toggle."""
+    portal_updates = {
+        "maths": maths_url,
+        "science": science_url,
+        "reader": reader_url,
+    }
+    school_updates = {
+        "sparx": maths_url,
+        "dr_frost": dr_frost_url,
+        "arbor": arbor_url,
+        "sims": sims_url,
+        "bromcom": bromcom_url,
+        "classcharts": classcharts_url,
+    }
+    provided_links = {key: value for key, value in portal_updates.items() if value is not None}
+    provided_school_links = {key: value for key, value in school_updates.items() if value is not None}
+    if not all(value.startswith(("http://", "https://")) for value in (*provided_links.values(), *provided_school_links.values())):
+        await interaction.response.send_message("Every supplied portal link must start with http:// or https://.", ephemeral=True)
         return
-    SPARX_LINKS.update(urls)
+    if provided_links:
+        SPARX_LINKS.update(provided_links)
+    if provided_school_links:
+        SCHOOL_PORTALS.update({k: v for k, v in provided_school_links.items() if v is not None})
+    COMMUNITY_CONFIG["portal_enabled"] = enabled
     save_config()
-    await interaction.response.send_message("Sparx links saved. Use /sparx to post them.", ephemeral=True)
+    await interaction.response.send_message(
+        "Portal links updated and the toggle is now " + ("enabled" if enabled else "disabled") + ".",
+        ephemeral=True,
+    )
 
 
 @bot.tree.command(name="school-portals", description="Compare school learning and parent portals")
 @app_commands.guild_only()
 async def school_portals_command(interaction: discord.Interaction) -> None:
     """Post links for the configured school portals."""
+    if not COMMUNITY_CONFIG.get("portal_enabled", True):
+        await interaction.response.send_message(
+            "Portal links are disabled on this server.", ephemeral=True
+        )
+        return
     embed = discord.Embed(
         title="🏫 School portals",
         description="These services do different jobs; use the one your school has assigned.",
@@ -1389,33 +1446,30 @@ async def school_portals_command(interaction: discord.Interaction) -> None:
     await interaction.response.send_message(embed=embed, view=view)
 
 
-@bot.tree.command(name="school-portals-config", description="Set school-specific portal links")
+@bot.tree.command(name="community-config", description="Set the welcome banner text and image for this server")
 @app_commands.guild_only()
 @app_commands.checks.has_permissions(manage_guild=True)
-async def school_portals_config_command(
+async def community_config_command(
     interaction: discord.Interaction,
-    sparx_url: str,
-    dr_frost_url: str,
-    arbor_url: str,
-    sims_url: str,
-    bromcom_url: str,
-    classcharts_url: str,
+    welcome_title: str | None = None,
+    welcome_message: str | None = None,
+    welcome_footer: str | None = None,
+    welcome_image_url: str | None = None,
 ) -> None:
-    """Save school login URLs for all portal services."""
-    links = {
-        "sparx": sparx_url,
-        "dr_frost": dr_frost_url,
-        "arbor": arbor_url,
-        "sims": sims_url,
-        "bromcom": bromcom_url,
-        "classcharts": classcharts_url,
-    }
-    if not all(url.startswith(("http://", "https://")) for url in links.values()):
-        await interaction.response.send_message("Every portal link must start with http:// or https://.", ephemeral=True)
-        return
-    SCHOOL_PORTALS.update(links)
+    """Consolidate the main welcome message options for the server."""
+    if welcome_title is not None:
+        COMMUNITY_CONFIG["welcome_title"] = welcome_title
+    if welcome_message is not None:
+        COMMUNITY_CONFIG["welcome_description"] = welcome_message
+    if welcome_footer is not None:
+        COMMUNITY_CONFIG["welcome_footer"] = welcome_footer
+    if welcome_image_url is not None:
+        if not welcome_image_url.startswith(("http://", "https://")):
+            await interaction.response.send_message("The welcome image URL must start with http:// or https://.", ephemeral=True)
+            return
+        COMMUNITY_CONFIG["welcome_image_url"] = welcome_image_url
     save_config()
-    await interaction.response.send_message("School portal links saved. Use /school-portals to post them.", ephemeral=True)
+    await interaction.response.send_message("Community welcome settings updated.", ephemeral=True)
 
 
 @bot.tree.command(name="serverinfo", description="Show server information")
@@ -1512,8 +1566,8 @@ async def leaderboard_command(interaction: discord.Interaction) -> None:
     state = load_community_state()
     levels = state.get("levels", {})
     ranked = sorted(
-        levels.items(),
-        key=lambda item: (int(item[1].get("xp", 0)), int(item[1].get("level", 0))),
+        ((user_id, normalized_user_data(data)) for user_id, data in levels.items()),
+        key=lambda item: (xp_value(item[1]), item[1].get("level", 0)),
         reverse=True,
     )[:10]
     if not ranked:
