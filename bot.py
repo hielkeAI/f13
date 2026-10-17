@@ -3640,3 +3640,27 @@ bot.tree.add_command(hielkemap_group)
 
 
 bot.run(DISCORD_TOKEN)
+
+
+@bot.tree.command(name="aitierlist", description="Show AI tier list ranking")
+async def aitierlist_command(interaction: discord.Interaction) -> None:
+    """Show a fun AI tier list."""
+    await interaction.response.defer(thinking=True)
+    
+    embed = discord.Embed(
+        title="\ud83c\udfaf AI TIER LIST \ud83c\udfaf",
+        description="Ranking of AI models from best to worst (opinion based)",
+        colour=discord.Colour.gold(),
+    )
+    
+    embed.add_field(name="\u2728 S+ TIER \u2728", value="`GPT-5` `Claude 4` `Mistral Large 2` `Gemini 2.0 Ultra`", inline=False)
+    embed.add_field(name="\u2604 S TIER \u2604", value="`GPT-4` `Claude 3 Opus` `Llama 3 70B` `Gemini 1.5 Pro` `Mistral Large`", inline=False)
+    embed.add_field(name="\ud83c\udf1f A TIER \ud83c\udf1f", value="`GPT-4 Turbo` `Claude 3 Sonnet` `Llama 3 8B` `Gemini 1.5 Flash` `Mixtral 8x7B` `Qwen 2 72B`", inline=False)
+    embed.add_field(name="\ud83c\udf1e B TIER \ud83c\udf1e", value="`GPT-3.5 Turbo` `Claude 3 Haiku` `Llama 2 70B` `Gemini 1.0 Pro` `Phi-3 14B` `Cohere Command R+`", inline=False)
+    embed.add_field(name="\u26a0 C TIER \u26a0", value="`GPT-3.5` `Llama 2 13B` `Gemini 1.0` `Mistral 7B` `Phi-3 7B` `Qwen 2 14B`", inline=False)
+    embed.add_field(name="\ud83d\udca9 D TIER \ud83d\udca9", value="`Bing Chat` `Bard` `Perplexity 7B` `StableLM 2` `TinyLlama`", inline=False)
+    embed.add_field(name="\ud83d\udd14 F TIER \ud83d\udd14", value="`AI Dungeon` `Character.AI` `Replika` `Anima` `Your ex's brain`", inline=False)
+    embed.add_field(name="\ud83e\udd80 MEME TIER \ud83e\udd80", value="`AI that says 'I am an AI and cannot'` `AI that hallucinates URLs` `AI that refuses to help`", inline=False)
+    embed.add_field(name="\ud83d\udc80 LEGENDARY TIER \ud83d\udc80", value="`HielkeMap AI` `Your imagination` `The AI from the future`", inline=False)
+    embed.set_footer(text="\u2728 Tier list by HielkeMap | All opinions are subjective | Made for fun")
+    await interaction.followup.send(embed=embed)
