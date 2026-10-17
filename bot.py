@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -19,6 +20,11 @@ import matplotlib.pyplot as plt
 from discord import app_commands
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
+
+try:
+    import pyfiglet
+except ImportError:
+    pyfiglet = None
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
@@ -2087,6 +2093,1151 @@ async def bus_status_command(interaction: discord.Interaction) -> None:
         f"Message: {BUS_CONFIG.get('message_id') or 'not created yet'}",
         ephemeral=True,
     )
+
+
+# ============================================================================
+# HIELKEMAP ADMIN/MOD SUITE - THE ULTIMATE COMMAND CENTER
+# ============================================================================
+
+# --- Data structures for the suite ---
+HIELKEMAP_CONFIG = saved_config.get("hielkemap", {})
+HIELKEMAP_CONFIG.setdefault("prefix", "!")
+HIELKEMAP_CONFIG.setdefault("mod_log_channel", None)
+HIELKEMAP_CONFIG.setdefault("auto_mod_enabled", True)
+HIELKEMAP_CONFIG.setdefault("warn_threshold", 3)
+HIELKEMAP_CONFIG.setdefault("mute_duration", 10)
+HIELKEMAP_CONFIG.setdefault("starboard_channel", None)
+HIELKEMAP_CONFIG.setdefault("starboard_threshold", 5)
+HIELKEMAP_CONFIG.setdefault("custom_commands", {})
+HIELKEMAP_CONFIG.setdefault("auto_roles", [])
+HIELKEMAP_CONFIG.setdefault("protected_roles", [])
+HIELKEMAP_CONFIG.setdefault("protected_channels", [])
+HIELKEMAP_CONFIG.setdefault("welcome_screen", {})
+
+
+def save_hielkemap_config() -> None:
+    saved_config["hielkemap"] = HIELKEMAP_CONFIG
+    save_config()
+
+
+def get_mod_log_channel(guild: discord.Guild) -> discord.TextChannel | None:
+    channel_id = HIELKEMAP_CONFIG.get("mod_log_channel")
+    if channel_id:
+        channel = guild.get_channel(int(channel_id))
+        if isinstance(channel, discord.TextChannel):
+            return channel
+    return None
+
+
+def log_mod_action(guild: discord.Guild, action: str, moderator: discord.Member | discord.User, target: discord.Member | discord.User, reason: str = "") -> None:
+    mod_log = get_mod_log_channel(guild)
+    if mod_log:
+        embed = discord.Embed(
+            title=f"{action}",
+            description=f"**Moderator:** {moderator.mention}\n**Target:** {target.mention}\n**Reason:** {reason or 'Not specified'}",
+            colour=discord.Colour.red() if "ban" in action.lower() or "kick" in action.lower() else discord.Colour.orange(),
+            timestamp=datetime.now(timezone.utc),
+        )
+        try:
+            mod_log.send(embed=embed)
+        except discord.DiscordException:
+            pass
+
+
+# --- Warning System ---
+WARN_CONFIG = HIELKEMAP_CONFIG.setdefault("warns", {})
+
+
+def get_user_warns(user_id: int) -> list[dict[str, Any]]:
+    return WARN_CONFIG.get(str(user_id), [])
+
+
+def add_user_warn(user_id: int, moderator_id: int, reason: str) -> None:
+    warns = WARN_CONFIG.setdefault(str(user_id), [])
+    warns.append({
+        "moderator_id": moderator_id,
+        "reason": reason,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    save_hielkemap_config()
+
+
+def clear_user_warns(user_id: int) -> int:
+    warns = WARN_CONFIG.pop(str(user_id), [])
+    save_hielkemap_config()
+    return len(warns)
+
+
+# --- Mute System ---
+MUTE_ROLE_NAME = "HielkeMute"
+
+
+async def get_or_create_mute_role(guild: discord.Guild) -> discord.Role | None:
+    mute_role = discord.utils.get(guild.roles, name=MUTE_ROLE_NAME)
+    if mute_role:
+        return mute_role
+    try:
+        mute_role = await guild.create_role(
+            name=MUTE_ROLE_NAME,
+            permissions=discord.Permissions.none(),
+            reason="HielkeMap mute role",
+        )
+        for channel in guild.text_channels:
+            await channel.set_permissions(mute_role, send_messages=False, speak=False)
+        return mute_role
+    except discord.Forbidden:
+        return None
+
+
+# --- Starboard System ---
+STARBOARD_EMOJI = "⭐"
+
+
+async def check_starboard_reaction(payload: discord.RawReactionActionEvent) -> None:
+    if payload.guild_id is None or str(payload.emoji) != STARBOARD_EMOJI:
+        return
+    guild = bot.get_guild(payload.guild_id)
+    if not guild:
+        return
+    starboard_channel_id = HIELKEMAP_CONFIG.get("starboard_channel")
+    if not starboard_channel_id:
+        return
+    starboard_channel = guild.get_channel(int(starboard_channel_id))
+    if not isinstance(starboard_channel, discord.TextChannel):
+        return
+    channel = guild.get_channel(payload.channel_id)
+    if not isinstance(channel, discord.TextChannel):
+        return
+    threshold = HIELKEMAP_CONFIG.get("starboard_threshold", 5)
+    try:
+        message = await channel.fetch_message(payload.message_id)
+    except discord.DiscordException:
+        return
+    if message.author.bot:
+        return
+    reaction = discord.utils.get(message.reactions, emoji=STARBOARD_EMOJI)
+    if not reaction or reaction.count < threshold:
+        return
+    starboard_state = load_state()
+    starred = starboard_state.setdefault("starboard", {})
+    message_key = f"{channel.id}-{message.id}"
+    if message_key in starred:
+        return
+    starred[message_key] = True
+    save_state(starboard_state)
+    embed = discord.Embed(
+        title="⭐ Starred Message",
+        description=message.content[:2000],
+        colour=discord.Colour.gold(),
+    )
+    embed.set_author(name=message.author.display_name, icon_url=message.author.display_avatar.url)
+    embed.add_field(name="Channel", value=channel.mention)
+    embed.add_field(name="Stars", value=str(reaction.count))
+    if message.attachments:
+        embed.set_image(url=message.attachments[0].url)
+    await starboard_channel.send(
+        f"⭐ **{reaction.count}** | {channel.mention}",
+        embed=embed,
+    )
+
+
+@bot.event
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent) -> None:
+    await apply_reaction_role(payload, True)
+    await check_starboard_reaction(payload)
+
+
+@bot.event
+async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent) -> None:
+    await apply_reaction_role(payload, False)
+
+
+# ============================================================================
+# HIELKEMAP COMMAND GROUP
+# ============================================================================
+
+hielkemap_group = app_commands.Group(name="hielkemap", description="The ultimate admin/mod command suite")
+
+
+# --- Moderation Subcommands ---
+
+@hielkemap_group.command(name="ban", description="Ban a member from the server")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(ban_members=True)
+@app_commands.describe(member="The member to ban", reason="Reason for the ban")
+async def hielkemap_ban(interaction: discord.Interaction, member: discord.Member, reason: str = "") -> None:
+    if member.id == interaction.user.id:
+        await interaction.response.send_message("You cannot ban yourself.", ephemeral=True)
+        return
+    if interaction.guild and member == interaction.guild.owner:
+        await interaction.response.send_message("Cannot ban the server owner.", ephemeral=True)
+        return
+    if interaction.guild and interaction.guild.me and member.top_role >= (interaction.guild.me.top_role if interaction.guild.me else None):
+        await interaction.response.send_message("Cannot ban members with higher or equal role.", ephemeral=True)
+        return
+    try:
+        await member.ban(reason=reason or f"Banned by {interaction.user}")
+        log_mod_action(interaction.guild, "Member Banned", interaction.user, member, reason)
+        await interaction.response.send_message(f"✅ **{member}** has been banned.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to ban this member.", ephemeral=True)
+
+
+@hielkemap_group.command(name="unban", description="Unban a member from the server")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(ban_members=True)
+@app_commands.describe(user_id="The user ID to unban", reason="Reason for unban")
+async def hielkemap_unban(interaction: discord.Interaction, user_id: str, reason: str = "") -> None:
+    try:
+        user_id_int = int(user_id)
+    except ValueError:
+        await interaction.response.send_message("❌ Invalid user ID.", ephemeral=True)
+        return
+    try:
+        user = await bot.fetch_user(user_id_int)
+        await interaction.guild.unban(user, reason=reason or f"Unbanned by {interaction.user}")
+        log_mod_action(interaction.guild, "Member Unbanned", interaction.user, user, reason)
+        await interaction.response.send_message(f"✅ **{user}** has been unbanned.", ephemeral=True)
+    except discord.NotFound:
+        await interaction.response.send_message("❌ User not found or not banned.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to unban.", ephemeral=True)
+
+
+@hielkemap_group.command(name="kick", description="Kick a member from the server")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(kick_members=True)
+@app_commands.describe(member="The member to kick", reason="Reason for the kick")
+async def hielkemap_kick(interaction: discord.Interaction, member: discord.Member, reason: str = "") -> None:
+    if member.id == interaction.user.id:
+        await interaction.response.send_message("You cannot kick yourself.", ephemeral=True)
+        return
+    if interaction.guild and member == interaction.guild.owner:
+        await interaction.response.send_message("Cannot kick the server owner.", ephemeral=True)
+        return
+    if interaction.guild and interaction.guild.me and member.top_role >= (interaction.guild.me.top_role if interaction.guild.me else None):
+        await interaction.response.send_message("Cannot kick members with higher or equal role.", ephemeral=True)
+        return
+    try:
+        await member.kick(reason=reason or f"Kicked by {interaction.user}")
+        log_mod_action(interaction.guild, "Member Kicked", interaction.user, member, reason)
+        await interaction.response.send_message(f"✅ **{member}** has been kicked.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to kick this member.", ephemeral=True)
+
+
+@hielkemap_group.command(name="warn", description="Warn a member")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(moderate_members=True)
+@app_commands.describe(member="The member to warn", reason="Reason for the warning")
+async def hielkemap_warn(interaction: discord.Interaction, member: discord.Member, reason: str = "") -> None:
+    if member.id == interaction.user.id:
+        await interaction.response.send_message("You cannot warn yourself.", ephemeral=True)
+        return
+    add_user_warn(member.id, interaction.user.id, reason or "No reason provided")
+    warns = get_user_warns(member.id)
+    threshold = HIELKEMAP_CONFIG.get("warn_threshold", 3)
+    embed = discord.Embed(
+        title="⚠️ You have been warned!",
+        description=f"**Reason:** {reason or 'No reason provided'}\n\n**This is warning {len(warns)}** of {threshold} before auto-mute.",
+        colour=discord.Colour.orange(),
+    )
+    embed.set_footer(text=f"Moderator: {interaction.user.display_name}")
+    try:
+        await member.send(embed=embed)
+    except discord.Forbidden:
+        pass
+    log_mod_action(interaction.guild, "Member Warned", interaction.user, member, reason)
+    await interaction.response.send_message(f"✅ **{member}** has been warned ({len(warns)}/{threshold}).", ephemeral=True)
+    if len(warns) >= threshold:
+        mute_role = await get_or_create_mute_role(interaction.guild)
+        if mute_role:
+            try:
+                await member.add_roles(mute_role, reason=f"Auto-mute after {threshold} warnings")
+                log_mod_action(interaction.guild, "Auto-Mute Applied", interaction.user, member, f"Reached {threshold} warnings")
+            except discord.Forbidden:
+                pass
+
+
+@hielkemap_group.command(name="warns", description="Check a member's warnings")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(moderate_members=True)
+@app_commands.describe(member="The member to check")
+async def hielkemap_warns(interaction: discord.Interaction, member: discord.Member) -> None:
+    warns = get_user_warns(member.id)
+    if not warns:
+        await interaction.response.send_message(f"✅ **{member}** has no warnings.", ephemeral=True)
+        return
+    embed = discord.Embed(
+        title=f"⚠️ Warnings for {member.display_name}",
+        colour=discord.Colour.orange(),
+    )
+    for i, warn in enumerate(warns, 1):
+        mod = interaction.guild.get_member(warn["moderator_id"])
+        mod_name = mod.display_name if mod else f"Unknown ({warn['moderator_id']})"
+        embed.add_field(
+            name=f"Warning {i}",
+            value=f"**Moderator:** {mod_name}\n**Reason:** {warn['reason']}\n**Date:** {warn['timestamp'][:19]}",
+            inline=False,
+        )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@hielkemap_group.command(name="clearwarns", description="Clear a member's warnings")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(moderate_members=True)
+@app_commands.describe(member="The member to clear warnings for")
+async def hielkemap_clearwarns(interaction: discord.Interaction, member: discord.Member) -> None:
+    cleared = clear_user_warns(member.id)
+    log_mod_action(interaction.guild, "Warnings Cleared", interaction.user, member, f"Cleared {cleared} warnings")
+    await interaction.response.send_message(f"✅ Cleared {cleared} warnings for **{member}**.", ephemeral=True)
+
+
+@hielkemap_group.command(name="mute", description="Mute a member")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(moderate_members=True)
+@app_commands.describe(member="The member to mute", duration="Duration in minutes (default: 10)", reason="Reason for mute")
+async def hielkemap_mute(interaction: discord.Interaction, member: discord.Member, duration: int = 10, reason: str = "") -> None:
+    if member.id == interaction.user.id:
+        await interaction.response.send_message("You cannot mute yourself.", ephemeral=True)
+        return
+    if interaction.guild and member == interaction.guild.owner:
+        await interaction.response.send_message("Cannot mute the server owner.", ephemeral=True)
+        return
+    mute_role = await get_or_create_mute_role(interaction.guild)
+    if not mute_role:
+        await interaction.response.send_message("❌ Could not create mute role. Check my permissions.", ephemeral=True)
+        return
+    try:
+        await member.add_roles(mute_role, reason=reason or f"Muted by {interaction.user}")
+        log_mod_action(interaction.guild, "Member Muted", interaction.user, member, reason)
+        await interaction.response.send_message(f"✅ **{member}** has been muted for {duration} minutes.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to mute this member.", ephemeral=True)
+
+
+@hielkemap_group.command(name="unmute", description="Unmute a member")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(moderate_members=True)
+@app_commands.describe(member="The member to unmute", reason="Reason for unmute")
+async def hielkemap_unmute(interaction: discord.Interaction, member: discord.Member, reason: str = "") -> None:
+    mute_role = discord.utils.get(interaction.guild.roles, name=MUTE_ROLE_NAME)
+    if not mute_role:
+        await interaction.response.send_message("❌ Mute role not found.", ephemeral=True)
+        return
+    if mute_role not in member.roles:
+        await interaction.response.send_message(f"✅ **{member}** is not muted.", ephemeral=True)
+        return
+    try:
+        await member.remove_roles(mute_role, reason=reason or f"Unmuted by {interaction.user}")
+        log_mod_action(interaction.guild, "Member Unmuted", interaction.user, member, reason)
+        await interaction.response.send_message(f"✅ **{member}** has been unmuted.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to unmute this member.", ephemeral=True)
+
+
+@hielkemap_group.command(name="timeout", description="Timeout a member")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(moderate_members=True)
+@app_commands.describe(member="The member to timeout", duration="Duration in minutes", reason="Reason for timeout")
+async def hielkemap_timeout(interaction: discord.Interaction, member: discord.Member, duration: app_commands.Range[int, 1, 1440], reason: str = "") -> None:
+    if member.id == interaction.user.id:
+        await interaction.response.send_message("You cannot timeout yourself.", ephemeral=True)
+        return
+    if interaction.guild and member == interaction.guild.owner:
+        await interaction.response.send_message("Cannot timeout the server owner.", ephemeral=True)
+        return
+    try:
+        until = datetime.now(timezone.utc) + timedelta(minutes=duration)
+        await member.timeout(until, reason=reason or f"Timeout by {interaction.user}")
+        log_mod_action(interaction.guild, "Member Timed Out", interaction.user, member, reason)
+        await interaction.response.send_message(f"✅ **{member}** has been timed out for {duration} minutes.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to timeout this member.", ephemeral=True)
+
+
+@hielkemap_group.command(name="untimeout", description="Remove timeout from a member")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(moderate_members=True)
+@app_commands.describe(member="The member to untimeout", reason="Reason for removing timeout")
+async def hielkemap_untimeout(interaction: discord.Interaction, member: discord.Member, reason: str = "") -> None:
+    try:
+        await member.timeout(None, reason=reason or f"Timeout removed by {interaction.user}")
+        log_mod_action(interaction.guild, "Timeout Removed", interaction.user, member, reason)
+        await interaction.response.send_message(f"✅ **{member}** timeout has been removed.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to remove timeout.", ephemeral=True)
+
+
+# --- Admin Subcommands ---
+
+@hielkemap_group.command(name="addrole", description="Add a role to a member")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_roles=True)
+@app_commands.describe(member="The member to give a role", role="The role to add")
+async def hielkemap_addrole(interaction: discord.Interaction, member: discord.Member, role: discord.Role) -> None:
+    if role.is_default() or role.managed:
+        await interaction.response.send_message("❌ Cannot assign default or managed roles.", ephemeral=True)
+        return
+    if interaction.guild and interaction.guild.me and role >= (interaction.guild.me.top_role if interaction.guild.me else None):
+        await interaction.response.send_message("❌ Cannot assign roles above my highest role.", ephemeral=True)
+        return
+    if role in member.roles:
+        await interaction.response.send_message(f"✅ **{member}** already has {role.mention}.", ephemeral=True)
+        return
+    try:
+        await member.add_roles(role)
+        await interaction.response.send_message(f"✅ Gave {role.mention} to **{member}**.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to assign this role.", ephemeral=True)
+
+
+@hielkemap_group.command(name="removerole", description="Remove a role from a member")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_roles=True)
+@app_commands.describe(member="The member to remove a role from", role="The role to remove")
+async def hielkemap_removerole(interaction: discord.Interaction, member: discord.Member, role: discord.Role) -> None:
+    if role.is_default() or role.managed:
+        await interaction.response.send_message("❌ Cannot remove default or managed roles.", ephemeral=True)
+        return
+    if role not in member.roles:
+        await interaction.response.send_message(f"✅ **{member}** doesn't have {role.mention}.", ephemeral=True)
+        return
+    try:
+        await member.remove_roles(role)
+        await interaction.response.send_message(f"✅ Removed {role.mention} from **{member}**.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to remove this role.", ephemeral=True)
+
+
+@hielkemap_group.command(name="createrole", description="Create a new role")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_roles=True)
+@app_commands.describe(name="Name of the new role", color="Role color (hex code or name)", hoist="Whether to hoist the role", mentionable="Whether the role is mentionable")
+async def hielkemap_createrole(
+    interaction: discord.Interaction,
+    name: str,
+    color: str = "default",
+    hoist: bool = False,
+    mentionable: bool = False,
+) -> None:
+    try:
+        role_color = discord.Colour.from_str(color) if color != "default" else discord.Colour.default()
+    except ValueError:
+        role_color = discord.Colour.default()
+    try:
+        role = await interaction.guild.create_role(
+            name=name[:100],
+            color=role_color,
+            hoist=hoist,
+            mentionable=mentionable,
+            reason=f"Created by {interaction.user}",
+        )
+        await interaction.response.send_message(f"✅ Created role {role.mention}.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to create roles.", ephemeral=True)
+
+
+@hielkemap_group.command(name="deleterole", description="Delete a role")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_roles=True)
+@app_commands.describe(role="The role to delete")
+async def hielkemap_deleterole(interaction: discord.Interaction, role: discord.Role) -> None:
+    if role.is_default() or role.managed:
+        await interaction.response.send_message("❌ Cannot delete default or managed roles.", ephemeral=True)
+        return
+    if role == interaction.guild.me.top_role:
+        await interaction.response.send_message("❌ Cannot delete my own role.", ephemeral=True)
+        return
+    try:
+        await role.delete(reason=f"Deleted by {interaction.user}")
+        await interaction.response.send_message(f"✅ Deleted role {role.name}.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to delete this role.", ephemeral=True)
+
+
+@hielkemap_group.command(name="createchannel", description="Create a new text channel")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_channels=True)
+@app_commands.describe(name="Name of the new channel", topic="Channel topic", nsfw="Whether the channel is NSFW")
+async def hielkemap_createchannel(
+    interaction: discord.Interaction,
+    name: str,
+    topic: str = "",
+    nsfw: bool = False,
+) -> None:
+    try:
+        channel = await interaction.guild.create_text_channel(
+            name=name[:100],
+            topic=topic[:1024] if topic else None,
+            nsfw=nsfw,
+            reason=f"Created by {interaction.user}",
+        )
+        await interaction.response.send_message(f"✅ Created channel {channel.mention}.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to create channels.", ephemeral=True)
+
+
+@hielkemap_group.command(name="deletechannel", description="Delete a channel")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_channels=True)
+@app_commands.describe(channel="The channel to delete")
+async def hielkemap_deletechannel(interaction: discord.Interaction, channel: discord.TextChannel) -> None:
+    if channel.id == interaction.channel_id:
+        await interaction.response.send_message("❌ Cannot delete the current channel.", ephemeral=True)
+        return
+    try:
+        await channel.delete(reason=f"Deleted by {interaction.user}")
+        await interaction.response.send_message(f"✅ Deleted channel {channel.name}.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to delete this channel.", ephemeral=True)
+
+
+@hielkemap_group.command(name="slowmode", description="Set slowmode for a channel")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_channels=True)
+@app_commands.describe(channel="The channel to set slowmode", seconds="Slowmode delay in seconds (0 to disable)")
+async def hielkemap_slowmode(interaction: discord.Interaction, channel: discord.TextChannel, seconds: app_commands.Range[int, 0, 21600]) -> None:
+    try:
+        await channel.edit(slowmode_delay=seconds)
+        await interaction.response.send_message(f"✅ Set slowmode to {seconds} seconds in {channel.mention}.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to set slowmode.", ephemeral=True)
+
+
+@hielkemap_group.command(name="lock", description="Lock a channel (deny send_messages for @everyone)")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_channels=True)
+@app_commands.describe(channel="The channel to lock", reason="Reason for locking")
+async def hielkemap_lock(interaction: discord.Interaction, channel: discord.TextChannel, reason: str = "") -> None:
+    try:
+        await channel.set_permissions(
+            interaction.guild.default_role,
+            send_messages=False,
+            reason=reason or f"Locked by {interaction.user}",
+        )
+        await interaction.response.send_message(f"✅ Locked {channel.mention}.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to lock this channel.", ephemeral=True)
+
+
+@hielkemap_group.command(name="unlock", description="Unlock a channel")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_channels=True)
+@app_commands.describe(channel="The channel to unlock", reason="Reason for unlocking")
+async def hielkemap_unlock(interaction: discord.Interaction, channel: discord.TextChannel, reason: str = "") -> None:
+    try:
+        await channel.set_permissions(
+            interaction.guild.default_role,
+            send_messages=None,
+            reason=reason or f"Unlocked by {interaction.user}",
+        )
+        await interaction.response.send_message(f"✅ Unlocked {channel.mention}.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to unlock this channel.", ephemeral=True)
+
+
+@hielkemap_group.command(name="nickname", description="Change a member's nickname")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_nicknames=True)
+@app_commands.describe(member="The member to change nickname", nickname="The new nickname (empty to reset)")
+async def hielkemap_nickname(interaction: discord.Interaction, member: discord.Member, nickname: str = "") -> None:
+    if nickname:
+        nickname = nickname[:32]
+    try:
+        await member.edit(nick=nickname or None)
+        await interaction.response.send_message(f"✅ Changed **{member}** nickname to **{nickname or 'default'}**.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ I don't have permission to change this nickname.", ephemeral=True)
+
+
+@hielkemap_group.command(name="purge", description="Bulk delete messages")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_messages=True)
+@app_commands.describe(amount="Number of messages to delete", user="Only delete messages from this user (optional)")
+async def hielkemap_purge(interaction: discord.Interaction, amount: app_commands.Range[int, 1, 100], user: discord.Member | None = None) -> None:
+    if not isinstance(interaction.channel, discord.TextChannel):
+        await interaction.response.send_message("❌ Use this in a text channel.", ephemeral=True)
+        return
+    await interaction.response.defer(ephemeral=True)
+    try:
+        deleted = await interaction.channel.purge(
+            limit=amount,
+            check=lambda m: user is None or m.author == user,
+        )
+        await interaction.followup.send(f"✅ Deleted {len(deleted)} messages.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.followup.send("❌ I don't have permission to delete messages.", ephemeral=True)
+
+
+# --- Server Management Subcommands ---
+
+@hielkemap_group.command(name="serverinfo", description="Get detailed server information")
+@app_commands.guild_only()
+async def hielkemap_serverinfo(interaction: discord.Interaction) -> None:
+    guild = interaction.guild
+    embed = discord.Embed(title=f"🏢 {guild.name}", colour=discord.Colour.blurple())
+    embed.add_field(name="👥 Members", value=f"Total: **{guild.member_count:,}**")
+    embed.add_field(name="📊 Online", value=f"**{len([m for m in guild.members if m.status != discord.Status.offline])}**")
+    embed.add_field(name="🎯 Roles", value=str(len(guild.roles)))
+    embed.add_field(name="💬 Channels", value=f"Text: **{len(guild.text_channels)}** | Voice: **{len(guild.voice_channels)}**")
+    embed.add_field(name="📅 Created", value=format_uk_datetime(guild.created_at))
+    embed.add_field(name="👑 Owner", value=str(guild.owner))
+    if guild.icon:
+        embed.set_thumbnail(url=guild.icon.url)
+    if guild.banner:
+        embed.set_image(url=guild.banner.url)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@hielkemap_group.command(name="membercount", description="Get member count with breakdown")
+@app_commands.guild_only()
+async def hielkemap_membercount(interaction: discord.Interaction) -> None:
+    guild = interaction.guild
+    online = len([m for m in guild.members if m.status == discord.Status.online])
+    idle = len([m for m in guild.members if m.status == discord.Status.idle])
+    dnd = len([m for m in guild.members if m.status == discord.Status.dnd])
+    offline = len([m for m in guild.members if m.status == discord.Status.offline])
+    bots = len([m for m in guild.members if m.bot])
+    humans = guild.member_count - bots
+    embed = discord.Embed(title="👥 Member Statistics", colour=discord.Colour.green())
+    embed.add_field(name="Total", value=f"**{guild.member_count:,}**")
+    embed.add_field(name="🤖 Bots", value=str(bots))
+    embed.add_field(name="👨‍👩‍👧‍👦 Humans", value=str(humans))
+    embed.add_field(name="🟢 Online", value=str(online))
+    embed.add_field(name="🟡 Idle", value=str(idle))
+    embed.add_field(name="🔴 DND", value=str(dnd))
+    embed.add_field(name="⚫ Offline", value=str(offline))
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@hielkemap_group.command(name="listroles", description="List all server roles")
+@app_commands.guild_only()
+async def hielkemap_listroles(interaction: discord.Interaction) -> None:
+    guild = interaction.guild
+    roles = sorted(guild.roles, key=lambda r: r.position, reverse=True)
+    chunks = [roles[i:i+20] for i in range(0, len(roles), 20)]
+    for i, chunk in enumerate(chunks):
+        embed = discord.Embed(
+            title=f"🎭 Roles (Part {i+1}/{len(chunks)})",
+            colour=discord.Colour.blurple(),
+        )
+        for role in chunk:
+            if role.members:
+                embed.add_field(name=role.name, value=f"Members: **{len(role.members)}** | ID: {role.id}", inline=False)
+            else:
+                embed.add_field(name=role.name, value=f"ID: {role.id}", inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        if i < len(chunks) - 1:
+            await interaction.followup.send(content="*More roles...*", ephemeral=True)
+
+
+@hielkemap_group.command(name="listbans", description="List banned members")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(ban_members=True)
+async def hielkemap_listbans(interaction: discord.Interaction) -> None:
+    await interaction.response.defer(ephemeral=True)
+    try:
+        bans = asyncio.run_coroutine_threadsafe(interaction.guild.bans(), bot.loop).result()
+        if not bans:
+            await interaction.followup.send("✅ No banned members.", ephemeral=True)
+            return
+        chunks = [bans[i:i+20] for i in range(0, len(bans), 20)]
+        for i, chunk in enumerate(chunks):
+            embed = discord.Embed(
+                title=f"🔨 Banned Members (Part {i+1}/{len(chunks)})",
+                colour=discord.Colour.red(),
+            )
+            for ban in chunk:
+                embed.add_field(name=str(ban.user), value=f"Reason: {ban.reason or 'Not specified'}", inline=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+    except Exception:
+        await interaction.followup.send("❌ Could not fetch ban list.", ephemeral=True)
+
+
+# --- Configuration Subcommands ---
+
+@hielkemap_group.command(name="modlog", description="Set the moderation log channel")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_guild=True)
+@app_commands.describe(channel="The channel for mod logs (omit to disable)")
+async def hielkemap_modlog(interaction: discord.Interaction, channel: discord.TextChannel | None = None) -> None:
+    if channel:
+        HIELKEMAP_CONFIG["mod_log_channel"] = channel.id
+        save_hielkemap_config()
+        await interaction.response.send_message(f"✅ Mod log set to {channel.mention}.", ephemeral=True)
+    else:
+        HIELKEMAP_CONFIG.pop("mod_log_channel", None)
+        save_hielkemap_config()
+        await interaction.response.send_message("✅ Mod log disabled.", ephemeral=True)
+
+
+@hielkemap_group.command(name="warnthreshold", description="Set the warning threshold for auto-mute")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_guild=True)
+@app_commands.describe(threshold="Number of warnings before auto-mute")
+async def hielkemap_warnthreshold(interaction: discord.Interaction, threshold: app_commands.Range[int, 1, 10]) -> None:
+    HIELKEMAP_CONFIG["warn_threshold"] = threshold
+    save_hielkemap_config()
+    await interaction.response.send_message(f"✅ Warning threshold set to {threshold}.", ephemeral=True)
+
+
+@hielkemap_group.command(name="starboard", description="Configure the starboard")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_guild=True)
+@app_commands.describe(channel="The starboard channel (omit to disable)", threshold="Number of ⭐ reactions needed")
+async def hielkemap_starboard(interaction: discord.Interaction, channel: discord.TextChannel | None = None, threshold: int = 5) -> None:
+    if channel:
+        HIELKEMAP_CONFIG["starboard_channel"] = channel.id
+        HIELKEMAP_CONFIG["starboard_threshold"] = threshold
+        save_hielkemap_config()
+        await interaction.response.send_message(f"✅ Starboard set to {channel.mention} with threshold {threshold}.", ephemeral=True)
+    else:
+        HIELKEMAP_CONFIG.pop("starboard_channel", None)
+        save_hielkemap_config()
+        await interaction.response.send_message("✅ Starboard disabled.", ephemeral=True)
+
+
+@hielkemap_group.command(name="autorole", description="Configure auto-role for new members")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_guild=True)
+@app_commands.describe(role="The role to give new members (omit to disable)")
+async def hielkemap_autorole(interaction: discord.Interaction, role: discord.Role | None = None) -> None:
+    if role:
+        if role.is_default() or role.managed:
+            await interaction.response.send_message("❌ Cannot use default or managed roles.", ephemeral=True)
+            return
+        HIELKEMAP_CONFIG["auto_role"] = role.id
+        save_hielkemap_config()
+        await interaction.response.send_message(f"✅ Auto-role set to {role.mention}.", ephemeral=True)
+    else:
+        HIELKEMAP_CONFIG.pop("auto_role", None)
+        save_hielkemap_config()
+        await interaction.response.send_message("✅ Auto-role disabled.", ephemeral=True)
+
+
+@hielkemap_group.command(name="welcome", description="Configure welcome messages")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_guild=True)
+@app_commands.describe(channel="The channel for welcome messages (omit to disable)", message="Welcome message template")
+async def hielkemap_welcome(interaction: discord.Interaction, channel: discord.TextChannel | None = None, message: str = "") -> None:
+    if channel:
+        HIELKEMAP_CONFIG["welcome_channel"] = channel.id
+        if message:
+            HIELKEMAP_CONFIG["welcome_message"] = message
+        save_hielkemap_config()
+        await interaction.response.send_message(f"✅ Welcome configured in {channel.mention}.", ephemeral=True)
+    else:
+        HIELKEMAP_CONFIG.pop("welcome_channel", None)
+        save_hielkemap_config()
+        await interaction.response.send_message("✅ Welcome messages disabled.", ephemeral=True)
+
+
+# --- Fun Subcommands ---
+
+@hielkemap_group.command(name="meme", description="Generate a meme")
+@app_commands.describe(top_text="Top text", bottom_text="Bottom text")
+async def hielkemap_meme(interaction: discord.Interaction, top_text: str = "", bottom_text: str = "") -> None:
+    memes = [
+        "https://i.imgur.com/dQw4w9W.png",
+        "https://i.imgur.com/6X46s.png",
+        "https://i.imgur.com/9E0fA.png",
+        "https://i.imgur.com/0v5M1.png",
+    ]
+    embed = discord.Embed(title="🤣 Meme Generator", colour=discord.Colour.purple())
+    embed.set_image(url=random.choice(memes))
+    if top_text:
+        embed.add_field(name="Top Text", value=top_text)
+    if bottom_text:
+        embed.add_field(name="Bottom Text", value=bottom_text)
+    await interaction.response.send_message(embed=embed)
+
+
+@hielkemap_group.command(name="joke", description="Tell a random joke")
+async def hielkemap_joke(interaction: discord.Interaction) -> None:
+    jokes = [
+        "Why don't scientists trust atoms? Because they make up everything!",
+        "Why did the scarecrow win an award? Because he was outstanding in his field!",
+        "What do you call a fake noodle? An impasta!",
+        "How do you organize a space party? You planet!",
+        "Why did the bicycle fall over? Because it was two-tired!",
+        "What's brown and sticky? A stick!",
+        "How do you catch a squirrel? Climb a tree and act like a nut!",
+        "Why can't you give Elsa from Frozen a balloon? Because she will let it go!",
+        "What's the best time to go to the dentist? Tooth-hurty!",
+        "Why did the math book look sad? Because it had too many problems!",
+    ]
+    await interaction.response.send_message(f"😂 **{random.choice(jokes)}**")
+
+
+@hielkemap_group.command(name="quote", description="Get a random motivational quote")
+async def hielkemap_quote(interaction: discord.Interaction) -> None:
+    quotes = [
+        "The only way to do great work is to love what you do. - Steve Jobs",
+        "Life is what happens when you're busy making other plans. - John Lennon",
+        "In the middle of every difficulty lies opportunity. - Albert Einstein",
+        "Believe you can and you're halfway there. - Theodore Roosevelt",
+        "The future belongs to those who believe in the beauty of their dreams. - Eleanor Roosevelt",
+        "It does not matter how slowly you go as long as you do not stop. - Confucius",
+        "Success is not final, failure is not fatal: It is the courage to continue that counts. - Winston Churchill",
+        "You are never too old to set another goal or to dream a new dream. - C.S. Lewis",
+    ]
+    await interaction.response.send_message(f"💬 *{random.choice(quotes)}*")
+
+
+@hielkemap_group.command(name="ascii", description="Convert text to ASCII art")
+@app_commands.describe(text="Text to convert")
+async def hielkemap_ascii(interaction: discord.Interaction, text: str) -> None:
+    ascii_art = pyfiglet.figlet_format(text[:20], font="block")
+    await interaction.response.send_message(f"```\n{ascii_art}\n```")
+
+
+@hielkemap_group.command(name="emoji", description="Get a random emoji")
+async def hielkemap_emoji(interaction: discord.Interaction) -> None:
+    emojis = [
+        "😀", "😂", "😍", "😎", "🤔", "🙄", "😇", "😈", "👻", "💀",
+        "🎉", "🎊", "🎈", "🎁", "🎮", "🎵", "🎧", "🎬", "📺", "📱",
+        "🚀", "🌟", "⭐", "🌈", "🌻", "🌺", "🌵", "🍀", "🌲", "🌳",
+        "🍎", "🍕", "🍔", "🍰", "🍩", "🍪", "☕", "🍹", "🍺", "🍻",
+        "⚽", "🏀", "🏈", "⚾", "🎾", "🏐", "🏉", "🎱", "🏓", "🏸",
+    ]
+    await interaction.response.send_message(f"{random.choice(emojis)} {random.choice(emojis)} {random.choice(emojis)}")
+
+
+@hielkemap_group.command(name="dice", description="Roll multiple dice")
+@app_commands.describe(dice="Dice format (e.g., 2d6, 1d20)")
+async def hielkemap_dice(interaction: discord.Interaction, dice: str = "1d6") -> None:
+    try:
+        count, sides = map(int, dice.lower().split("d"))
+        count = min(count, 10)
+        sides = min(sides, 100)
+        rolls = [random.randint(1, sides) for _ in range(count)]
+        total = sum(rolls)
+        await interaction.response.send_message(
+            f"🎲 Rolling {count}d{sides}: {', '.join(map(str, rolls))} = **{total}**"
+        )
+    except (ValueError, AttributeError):
+        await interaction.response.send_message("❌ Use format like 2d6 or 1d20.", ephemeral=True)
+
+
+@hielkemap_group.command(name="flip", description="Flip a coin")
+async def hielkemap_flip(interaction: discord.Interaction) -> None:
+    result = random.choice(["Heads", "Tails"])
+    await interaction.response.send_message(f"🪙 **{result}!**")
+
+
+@hielkemap_group.command(name="rps", description="Play Rock Paper Scissors")
+@app_commands.choices(choice=[
+    app_commands.Choice(name="Rock", value="rock"),
+    app_commands.Choice(name="Paper", value="paper"),
+    app_commands.Choice(name="Scissors", value="scissors"),
+])
+async def hielkemap_rps(interaction: discord.Interaction, choice: app_commands.Choice[str]) -> None:
+    choices = ["rock", "paper", "scissors"]
+    bot_choice = random.choice(choices)
+    winner = "You" if choice.value == bot_choice else "Bot"
+    if choice.value != bot_choice:
+        if (choice.value == "rock" and bot_choice == "scissors") or \
+           (choice.value == "paper" and bot_choice == "rock") or \
+           (choice.value == "scissors" and bot_choice == "paper"):
+            winner = "You"
+        else:
+            winner = "Bot"
+    else:
+        winner = "Tie"
+    emojis = {"rock": "🪨", "paper": "📄", "scissors": "✂️"}
+    await interaction.response.send_message(
+        f"🤖 **{winner} win!**\nYou: {emojis[choice.value]} | Bot: {emojis[bot_choice]}"
+    )
+
+
+# --- Utility Subcommands ---
+
+@hielkemap_group.command(name="ping", description="Check bot latency")
+async def hielkemap_ping(interaction: discord.Interaction) -> None:
+    latency = bot.latency * 1000
+    await interaction.response.send_message(f"🏓 Pong! **{latency:.0f} ms**")
+
+
+@hielkemap_group.command(name="userinfo", description="Get detailed user information")
+@app_commands.describe(member="The member to check")
+async def hielkemap_userinfo(interaction: discord.Interaction, member: discord.Member | None = None) -> None:
+    member = member or interaction.user
+    embed = discord.Embed(title=f"👤 {member.display_name}", colour=member.colour)
+    embed.add_field(name="🆔 ID", value=str(member.id))
+    embed.add_field(name="👑 Nickname", value=member.nick or "None")
+    embed.add_field(name="📅 Joined Server", value=format_uk_datetime(member.joined_at) if member.joined_at else "Unknown")
+    embed.add_field(name="🌍 Account Created", value=format_uk_datetime(member.created_at))
+    embed.add_field(name="🤖 Bot", value="Yes" if member.bot else "No")
+    if member.roles[1:]:
+        roles = ", ".join(role.mention for role in member.roles[1:])
+        embed.add_field(name="🎭 Roles", value=roles[:1024], inline=False)
+    embed.set_thumbnail(url=member.display_avatar.url)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@hielkemap_group.command(name="avatar", description="Get a user's avatar")
+@app_commands.describe(member="The member to check")
+async def hielkemap_avatar(interaction: discord.Interaction, member: discord.Member | None = None) -> None:
+    member = member or interaction.user
+    embed = discord.Embed(title=f"🖼️ {member.display_name}'s Avatar", colour=member.colour)
+    embed.set_image(url=member.display_avatar.url)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@hielkemap_group.command(name="banner", description="Get a user's banner")
+@app_commands.describe(member="The member to check")
+async def hielkemap_banner(interaction: discord.Interaction, member: discord.Member | None = None) -> None:
+    member = member or interaction.user
+    if not member.banner:
+        await interaction.response.send_message("❌ This user has no banner.", ephemeral=True)
+        return
+    embed = discord.Embed(title=f"🎨 {member.display_name}'s Banner", colour=member.colour)
+    embed.set_image(url=member.banner.url)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@hielkemap_group.command(name="servericon", description="Get the server icon")
+@app_commands.guild_only()
+async def hielkemap_servericon(interaction: discord.Interaction) -> None:
+    if not interaction.guild.icon:
+        await interaction.response.send_message("❌ This server has no icon.", ephemeral=True)
+        return
+    embed = discord.Embed(title=f"🏢 {interaction.guild.name}'s Icon", colour=discord.Colour.blurple())
+    embed.set_image(url=interaction.guild.icon.url)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@hielkemap_group.command(name="calc", description="Calculate a math expression")
+@app_commands.describe(expression="Math expression (e.g., 2+2*3)")
+async def hielkemap_calc(interaction: discord.Interaction, expression: str) -> None:
+    try:
+        result = eval(expression, {"__builtins__": None}, {"math": __import__("math")})
+        await interaction.response.send_message(f"🧮 **{expression} = {result}**")
+    except Exception:
+        await interaction.response.send_message("❌ Invalid expression.", ephemeral=True)
+
+
+@hielkemap_group.command(name="poll", description="Create a poll with multiple options")
+@app_commands.describe(question="The poll question", options="Comma-separated options")
+async def hielkemap_poll(interaction: discord.Interaction, question: str, options: str) -> None:
+    option_list = [opt.strip() for opt in options.split(",") if opt.strip()]
+    if len(option_list) < 2:
+        await interaction.response.send_message("❌ Need at least 2 options.", ephemeral=True)
+        return
+    if len(option_list) > 10:
+        await interaction.response.send_message("❌ Maximum 10 options.", ephemeral=True)
+        return
+    embed = discord.Embed(title="📊 Poll", description=question, colour=discord.Colour.blurple())
+    embed.set_footer(text=f"Poll by {interaction.user.display_name}")
+    view = discord.ui.View()
+    for i, option in enumerate(option_list):
+        view.add_item(discord.ui.Button(
+            label=option[:80],
+            style=discord.ButtonStyle.primary,
+            custom_id=f"poll_option_{i}",
+        ))
+    await interaction.channel.send(embed=embed, view=view)
+    await interaction.response.send_message("✅ Poll created!", ephemeral=True)
+
+
+@hielkemap_group.command(name="remindme", description="Set a personal reminder")
+@app_commands.describe(time="Time (e.g., 5m, 1h, 2d)", message="Reminder message")
+async def hielkemap_remindme(interaction: discord.Interaction, time: str, message: str) -> None:
+    import asyncio
+    time_units = {
+        "s": 1,
+        "m": 60,
+        "h": 3600,
+        "d": 86400,
+    }
+    try:
+        unit = time[-1].lower()
+        if unit not in time_units:
+            raise ValueError
+        seconds = int(time[:-1]) * time_units[unit]
+        if seconds < 10 or seconds > 86400 * 7:
+            raise ValueError
+    except (ValueError, IndexError):
+        await interaction.response.send_message(
+            "❌ Use format like 5m, 1h, or 2d (10s to 7d).", ephemeral=True
+        )
+        return
+    await interaction.response.send_message(
+        f"⏰ Reminder set! I'll remind you in **{time}** with: {message}", ephemeral=True
+    )
+    await asyncio.sleep(seconds)
+    if isinstance(interaction.channel, discord.TextChannel):
+        await interaction.channel.send(
+            f"{interaction.user.mention} ⏰ **REMINDER:** {message}"
+        )
+
+
+@hielkemap_group.command(name="notes", description="Add or view notes for a user")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(moderate_members=True)
+@app_commands.describe(member="The member to add notes for", note="Note to add (omit to view notes)")
+async def hielkemap_notes(interaction: discord.Interaction, member: discord.Member, note: str = "") -> None:
+    user_notes = HIELKEMAP_CONFIG.setdefault("notes", {}).setdefault(str(member.id), [])
+    if note:
+        user_notes.append({
+            "moderator_id": interaction.user.id,
+            "note": note,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+        save_hielkemap_config()
+        await interaction.response.send_message(f"✅ Note added for **{member}**.", ephemeral=True)
+    else:
+        if not user_notes:
+            await interaction.response.send_message(f"✅ **{member}** has no notes.", ephemeral=True)
+            return
+        embed = discord.Embed(
+            title=f"📝 Notes for {member.display_name}",
+            colour=discord.Colour.blue(),
+        )
+        for n in user_notes:
+            mod = interaction.guild.get_member(n["moderator_id"])
+            mod_name = mod.display_name if mod else f"Unknown ({n['moderator_id']})"
+            embed.add_field(
+                name=f"Note from {mod_name}",
+                value=f"{n['note']}\n{n['timestamp'][:19]}",
+                inline=False,
+            )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@hielkemap_group.command(name="clearnotes", description="Clear notes for a user")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(moderate_members=True)
+@app_commands.describe(member="The member to clear notes for")
+async def hielkemap_clearnotes(interaction: discord.Interaction, member: discord.Member) -> None:
+    user_notes = HIELKEMAP_CONFIG.setdefault("notes", {}).pop(str(member.id), [])
+    save_hielkemap_config()
+    await interaction.response.send_message(f"✅ Cleared {len(user_notes)} notes for **{member}**.", ephemeral=True)
+
+
+# --- Custom Commands ---
+
+@hielkemap_group.command(name="customcmd-add", description="Add a custom command")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_guild=True)
+@app_commands.describe(name="Command name", response="Response text")
+async def hielkemap_customcmd_add(interaction: discord.Interaction, name: str, response: str) -> None:
+    custom_commands = HIELKEMAP_CONFIG.setdefault("custom_commands", {})
+    name = name.lower().strip()
+    if name in custom_commands:
+        await interaction.response.send_message(f"❌ Command **{name}** already exists.", ephemeral=True)
+        return
+    custom_commands[name] = response
+    save_hielkemap_config()
+    await interaction.response.send_message(f"✅ Custom command **{name}** added.", ephemeral=True)
+
+
+@hielkemap_group.command(name="customcmd-remove", description="Remove a custom command")
+@app_commands.guild_only()
+@app_commands.checks.has_permissions(manage_guild=True)
+@app_commands.describe(name="Command name")
+async def hielkemap_customcmd_remove(interaction: discord.Interaction, name: str) -> None:
+    custom_commands = HIELKEMAP_CONFIG.setdefault("custom_commands", {})
+    name = name.lower().strip()
+    if name not in custom_commands:
+        await interaction.response.send_message(f"❌ Command **{name}** not found.", ephemeral=True)
+        return
+    del custom_commands[name]
+    save_hielkemap_config()
+    await interaction.response.send_message(f"✅ Custom command **{name}** removed.", ephemeral=True)
+
+
+@hielkemap_group.command(name="customcmd-list", description="List all custom commands")
+@app_commands.guild_only()
+async def hielkemap_customcmd_list(interaction: discord.Interaction) -> None:
+    custom_commands = HIELKEMAP_CONFIG.get("custom_commands", {})
+    if not custom_commands:
+        await interaction.response.send_message("✅ No custom commands configured.", ephemeral=True)
+        return
+    embed = discord.Embed(title="⚙️ Custom Commands", colour=discord.Colour.purple())
+    for name, response in list(custom_commands.items())[:25]:
+        embed.add_field(name=f"/{name}", value=response[:1024], inline=False)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="custom")
+async def custom_command(interaction: discord.Interaction, name: str) -> None:
+    """Execute a custom command."""
+    custom_commands = HIELKEMAP_CONFIG.get("custom_commands", {})
+    name = name.lower().strip()
+    if name not in custom_commands:
+        await interaction.response.send_message(f"❌ Custom command **{name}** not found.", ephemeral=True)
+        return
+    response = custom_commands[name]
+    await interaction.response.send_message(response)
+
+
+# --- Help Command ---
+
+@hielkemap_group.command(name="help", description="Show all HielkeMap commands")
+async def hielkemap_help(interaction: discord.Interaction) -> None:
+    embed = discord.Embed(
+        title="🏆 HielkeMap Admin/Mod Suite",
+        description="The ultimate Discord bot command suite with **everything** you need!",
+        colour=discord.Colour.gold(),
+    )
+    
+    # Moderation
+    embed.add_field(
+        name="🛡️ Moderation",
+        value="`/hielkemap ban` `/hielkemap unban` `/hielkemap kick` `/hielkemap warn` `/hielkemap warns` `/hielkemap clearwarns` `/hielkemap mute` `/hielkemap unmute` `/hielkemap timeout` `/hielkemap untimeout`",
+        inline=False,
+    )
+    
+    # Admin
+    embed.add_field(
+        name="👑 Admin",
+        value="`/hielkemap addrole` `/hielkemap removerole` `/hielkemap createrole` `/hielkemap deleterole` `/hielkemap createchannel` `/hielkemap deletechannel` `/hielkemap slowmode` `/hielkemap lock` `/hielkemap unlock` `/hielkemap nickname` `/hielkemap purge`",
+        inline=False,
+    )
+    
+    # Server Management
+    embed.add_field(
+        name="📊 Server Management",
+        value="`/hielkemap serverinfo` `/hielkemap membercount` `/hielkemap listroles` `/hielkemap listbans`",
+        inline=False,
+    )
+    
+    # Configuration
+    embed.add_field(
+        name="⚙️ Configuration",
+        value="`/hielkemap modlog` `/hielkemap warnthreshold` `/hielkemap starboard` `/hielkemap autorole` `/hielkemap welcome`",
+        inline=False,
+    )
+    
+    # Fun
+    embed.add_field(
+        name="🎉 Fun",
+        value="`/hielkemap meme` `/hielkemap joke` `/hielkemap quote` `/hielkemap ascii` `/hielkemap emoji` `/hielkemap dice` `/hielkemap flip` `/hielkemap rps`",
+        inline=False,
+    )
+    
+    # Utility
+    embed.add_field(
+        name="🔧 Utility",
+        value="`/hielkemap ping` `/hielkemap userinfo` `/hielkemap avatar` `/hielkemap banner` `/hielkemap servericon` `/hielkemap calc` `/hielkemap poll` `/hielkemap remindme`",
+        inline=False,
+    )
+    
+    # Mod Tools
+    embed.add_field(
+        name="📋 Mod Tools",
+        value="`/hielkemap notes` `/hielkemap clearnotes` `/hielkemap customcmd-add` `/hielkemap customcmd-remove` `/hielkemap customcmd-list`",
+        inline=False,
+    )
+    
+    embed.set_footer(text="Type /hielkemap help for this menu. Use /custom <name> for custom commands.")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+# --- Add the command group to the bot ---
+bot.tree.add_command(hielkemap_group)
 
 
 bot.run(DISCORD_TOKEN)
