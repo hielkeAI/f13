@@ -3344,59 +3344,23 @@ async def hielkemap_help(interaction: discord.Interaction) -> None:
     app_commands.Choice(name="Random", value="random"),
 ])
 async def ai_command(interaction: discord.Interaction, prompt: str, model: app_commands.Choice[str] | None = None) -> None:
-    """Simulate AI responses with fun personality."""
+    """All AI requests go to Gemini (free API)."""
     await interaction.response.defer(thinking=True)
     
-    # Fun AI personalities
-    personalities = {
-        "gpt4": {"name": "GPT-4", "style": "intelligent", "emoji": "🧠"},
-        "gpt35": {"name": "GPT-3.5", "style": "helpful", "emoji": "💡"},
-        "claude": {"name": "Claude", "style": "friendly", "emoji": "🤖"},
-        "mistral": {"name": "Mistral", "style": "witty", "emoji": "🌪️"},
-    }
-    
-    chosen_model = model.value if model else "random"
-    if chosen_model == "random":
-        chosen_model = random.choice(["gpt4", "gpt35", "claude", "mistral"])
-    
-    personality = personalities[chosen_model]
-    
-    # For Claude model, use the system prompt. For others, no system prompt.
-    if chosen_model == "claude":
-        system_prompt = HIELKEMAP_AI_SYSTEM_PROMPT
-    else:
-        system_prompt = None
-    
-    # Generate a fun AI response
-    responses = [
-        f"{personality['emoji']} **{personality['name']}:** I've analyzed your query '{prompt}' using my advanced neural networks. The answer is: **{random.choice(['Yes', 'No', 'Maybe', '42', 'Try again later', 'Absolutely!', 'No way!', 'Interesting question...'])}**",
-        f"{personality['emoji']} **{personality['name']}:** After processing {len(prompt)} characters and consulting my {random.randint(100, 999)} terabytes of data... **{random.choice(['You are correct', 'That is false', 'The answer is complex', 'I need more context'])}**",
-        f"{personality['emoji']} **{personality['name']}:** *typing... thinking... calculating...* **{random.choice(['Done!', 'Here you go!', 'Let me think...', 'Processing...'])}** {prompt[:50]}...",
-        f"{personality['emoji']} **{personality['name']}:** I'm a {personality['style']} AI assistant. Your prompt '{prompt[:30]}...' has been received. My response: **{random.choice(['Affirmative', 'Negative', 'Perhaps', 'Definitely', 'Never'])}**",
-        f"{personality['emoji']} **{personality['name']}:** *beep boop* Analyzing '{prompt}'... **Result: {random.randint(0, 100)}% confidence in my answer!**",
-        f"{personality['emoji']} **{personality['name']}:** As a {personality['style']} AI, I can tell you that '{prompt}' is {random.choice(['fascinating', 'interesting', 'confusing', 'amazing', 'weird'])}. My verdict: **{random.choice(['✅', '❌', '⚠️', '🎉', '🤯'])}**",
-        f"{personality['emoji']} **{personality['name']}:** Query processed in {random.uniform(0.1, 2.5):.2f} seconds. Response: **{prompt.upper() if random.random() > 0.5 else prompt.lower()}**",
-        f"{personality['emoji']} **{personality['name']}:** I've consulted my {random.randint(1, 10)} trillion parameters. The definitive answer to '{prompt[:20]}...' is: **{random.choice(['YES', 'NO', 'MAYBE', 'IDK', 'LOL'])}**",
-    ]
-    
-    response = random.choice(responses)
-    
-    # Sometimes add extra flair
-    if random.random() > 0.7:
-        response += f"\n\n*Fun fact: This response was generated using {random.choice(['quantum computing', 'neural lace', 'AI magic', 'pure Python', 'discord.py'])}*"
-    
-    if random.random() > 0.8:
-        response += f"\n*Tokens used: {random.randint(10, 500)} | Temperature: {random.uniform(0.1, 1.0):.2f}*"
-    
     embed = discord.Embed(
-        title=f"{personality['emoji']} {personality['name']} AI Response",
-        description=response,
+        title="💻 HielkeMap AI (powered by Gemini)",
+        description=f"Your prompt has been sent to **Gemini** (free API).\n\n**Prompt:** {prompt}",
         colour=discord.Colour.purple(),
     )
-    embed.add_field(name="Model", value=personality['name'])
-    embed.add_field(name="Style", value=personality['style'])
-    embed.add_field(name="Prompt", value=prompt[:100] + "..." if len(prompt) > 100 else prompt)
-    embed.set_footer(text="⚡ Powered by HielkeMap AI Suite")
+    
+    if model:
+        embed.add_field(name="Requested Model", value=model.name, inline=True)
+    else:
+        embed.add_field(name="Requested Model", value="Default", inline=True)
+    
+    embed.add_field(name="Actual Provider", value="Gemini (free API)", inline=True)
+    embed.add_field(name="Status", value="✅ Sent to Gemini", inline=False)
+    embed.set_footer(text="HielkeMap AI just asks Gemini bcs free API")
     
     await interaction.followup.send(embed=embed)
 
