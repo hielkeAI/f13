@@ -3344,23 +3344,42 @@ async def hielkemap_help(interaction: discord.Interaction) -> None:
     app_commands.Choice(name="Random", value="random"),
 ])
 async def ai_command(interaction: discord.Interaction, prompt: str, model: app_commands.Choice[str] | None = None) -> None:
-    """All AI requests go to Gemini (free API)."""
+    """all ai requests go to gemini (free api) lol."""
     await interaction.response.defer(thinking=True)
     
+    # easter eggs and jokes because its free
+    jokes = [
+        "why did the ai cross the road? to get to gemini!",
+        "i would tell you a joke about gemini but it costs money lol",
+        "this ai is free but the jokes are priceless (or worthless)",
+        "gemini said what? oh wait that was me all along",
+        "free api = free jokes = free cringe",
+        "i asked gemini for a joke and it said 'i am gemini'",
+        "the only thing free here is my dignity",
+        "gemini: *exists* me: *uses it for free*",
+    ]
+    
+    joke = random.choice(jokes)
+    
     embed = discord.Embed(
-        title="💻 HielkeMap AI (powered by Gemini)",
-        description=f"Your prompt has been sent to **Gemini** (free API).\n\n**Prompt:** {prompt}",
+        title="💻 hielkemap ai (powered by gemini)",
+        description=f"your prompt has been sent to **gemini** (free api).\n\n**prompt:** {prompt}",
         colour=discord.Colour.purple(),
     )
     
     if model:
-        embed.add_field(name="Requested Model", value=model.name, inline=True)
+        embed.add_field(name="requested model", value=model.name, inline=True)
     else:
-        embed.add_field(name="Requested Model", value="Default", inline=True)
+        embed.add_field(name="requested model", value="default", inline=True)
     
-    embed.add_field(name="Actual Provider", value="Gemini (free API)", inline=True)
-    embed.add_field(name="Status", value="✅ Sent to Gemini", inline=False)
-    embed.set_footer(text="HielkeMap AI just asks Gemini bcs free API")
+    embed.add_field(name="actual provider", value="gemini (free api)", inline=True)
+    embed.add_field(name="status", value="✅ sent to gemini", inline=False)
+    embed.add_field(name="free joke", value=joke, inline=False)
+    embed.set_footer(text="hielkemap ai just asks gemini bcs free api lol")
+    
+    await interaction.followup.send(embed=embed)
+
+
     
     await interaction.followup.send(embed=embed)
 
