@@ -3653,9 +3653,9 @@ async def aitierlist_command(interaction: discord.Interaction) -> None:
         colour=discord.Colour.gold(),
     )
     
-    embed.add_field(name="\u2728 S+ TIER \u2728", value="`GPT-5` `Gemini 2.5 Pro` `Gemini 4`", inline=False)
-    embed.add_field(name="\ud83c\udf96 A++ TIER \ud83c\udf96", value="`Mistral Large 2` `Mistral Large` `Mistral Small`", inline=False)
-    embed.add_field(name="\u2604 S TIER \u2604", value="`GPT-4o` `GPT-4` `o1` `o1-mini` `Llama 4 70B` `Gemini 2.0 Ultra`", inline=False)
+    embed.add_field(name="\u2728 S+ TIER \u2728", value="`Mistral Le Chonk` `Gemini 2.5 Pro` `Gemini 4`", inline=False)
+    embed.add_field(name="\ud83c\udf96 A++ TIER \ud83c\udf96", value="`Mistral Large 2` `Mistral Large` `Mistral Small` `GPT-5`", inline=False)
+    embed.add_field(name="\u2604 S TIER \u2604", value="`GPT-4o` `GPT-4` `o1` `o1-mini` `Llama 4 70B` `Gemini 2.0 Ultra` `Google Modern AIs LOL`", inline=False)
     embed.add_field(name="\ud83c\udf1f A TIER \ud83c\udf1f", value="`GPT-4 Turbo` `Claude 3.7 Sonnet` `Claude 3.5 Sonnet` `Llama 4 9B` `Gemini 2.5 Flash` `Mixtral 8x22B` `Qwen 2.5 72B`", inline=False)
     embed.add_field(name="\ud83c\udf1e B TIER \ud83c\udf1e", value="`GPT-3.5 Turbo` `Claude 3 Haiku` `Llama 3.3 70B` `Gemini 1.5 Pro` `Phi-4 14B` `Cohere Command R+`", inline=False)
     embed.add_field(name="\u26a0 C TIER \u26a0", value="`GPT-3.5` `Llama 3.2 13B` `Gemini 1.5` `Mistral 7B` `Phi-3.5 7B` `Qwen 2.5 14B`", inline=False)
