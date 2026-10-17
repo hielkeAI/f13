@@ -3361,6 +3361,12 @@ async def ai_command(interaction: discord.Interaction, prompt: str, model: app_c
     
     personality = personalities[chosen_model]
     
+    # For Claude model, use the system prompt. For others, no system prompt.
+    if chosen_model == "claude":
+        system_prompt = HIELKEMAP_AI_SYSTEM_PROMPT
+    else:
+        system_prompt = None
+    
     # Generate a fun AI response
     responses = [
         f"{personality['emoji']} **{personality['name']}:** I've analyzed your query '{prompt}' using my advanced neural networks. The answer is: **{random.choice(['Yes', 'No', 'Maybe', '42', 'Try again later', 'Absolutely!', 'No way!', 'Interesting question...'])}**",
