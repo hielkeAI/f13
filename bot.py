@@ -3662,6 +3662,6 @@ async def aitierlist_command(interaction: discord.Interaction) -> None:
     embed.add_field(name="\ud83d\udca9 D TIER \ud83d\udca9", value="`Bing Chat` `Bard` `Perplexity 70B` `StableLM 3` `TinyLlama 1.1`", inline=False)
     embed.add_field(name="\ud83d\udd14 F TIER \ud83d\udd14", value="`Claude 4` `Claude 3 Opus` `Claude 3.7 Sonnet` `Claude 3.5 Sonnet` `Claude 3 Haiku` `Claude` `AI Dungeon` `Character.AI` `Replika` `Anima` `Your ex's brain`", inline=False)
     embed.add_field(name="\ud83e\udd80 MEME TIER \ud83e\udd80", value="`AI that says 'I am an AI and cannot'` `AI that hallucinates URLs` `AI that refuses to help` `AI that writes 10 page essays for 'yes'`", inline=False)
-    embed.add_field(name="\ud83d\udc80 LEGENDARY TIER \ud83d\udc80", value="`HielkeMap AI` `Your imagination` `The AI from the future` `GPT-6`", inline=False)
+    embed.add_field(name="\ud83d\udc80 LEGENDARY TIER \ud83d\udc80", value="`HielkeMap AI (just asks Gemini bcs free API)` `Your imagination` `The AI from the future` `GPT-6`", inline=False)
     embed.set_footer(text="\u2728 Tier list by HielkeMap | All opinions are subjective | Made for fun")
     await interaction.followup.send(embed=embed)
