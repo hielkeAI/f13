@@ -3236,6 +3236,405 @@ async def hielkemap_help(interaction: discord.Interaction) -> None:
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
+# --- AI Commands ---
+
+@bot.tree.command(name="ai", description="Interact with AI - ask anything, generate text, images, and more!")
+@app_commands.describe(prompt="Your AI prompt", model="AI model to use")
+@app_commands.choices(model=[
+    app_commands.Choice(name="GPT-4", value="gpt4"),
+    app_commands.Choice(name="GPT-3.5", value="gpt35"),
+    app_commands.Choice(name="Claude", value="claude"),
+    app_commands.Choice(name="Mistral", value="mistral"),
+    app_commands.Choice(name="Random", value="random"),
+])
+async def ai_command(interaction: discord.Interaction, prompt: str, model: app_commands.Choice[str] | None = None) -> None:
+    """Simulate AI responses with fun personality."""
+    await interaction.response.defer(thinking=True)
+    
+    # Fun AI personalities
+    personalities = {
+        "gpt4": {"name": "GPT-4", "style": "intelligent", "emoji": "🧠"},
+        "gpt35": {"name": "GPT-3.5", "style": "helpful", "emoji": "💡"},
+        "claude": {"name": "Claude", "style": "friendly", "emoji": "🤖"},
+        "mistral": {"name": "Mistral", "style": "witty", "emoji": "🌪️"},
+    }
+    
+    chosen_model = model.value if model else "random"
+    if chosen_model == "random":
+        chosen_model = random.choice(["gpt4", "gpt35", "claude", "mistral"])
+    
+    personality = personalities[chosen_model]
+    
+    # Generate a fun AI response
+    responses = [
+        f"{personality['emoji']} **{personality['name']}:** I've analyzed your query '{prompt}' using my advanced neural networks. The answer is: **{random.choice(['Yes', 'No', 'Maybe', '42', 'Try again later', 'Absolutely!', 'No way!', 'Interesting question...'])}**",
+        f"{personality['emoji']} **{personality['name']}:** After processing {len(prompt)} characters and consulting my {random.randint(100, 999)} terabytes of data... **{random.choice(['You are correct', 'That is false', 'The answer is complex', 'I need more context'])}**",
+        f"{personality['emoji']} **{personality['name']}:** *typing... thinking... calculating...* **{random.choice(['Done!', 'Here you go!', 'Let me think...', 'Processing...'])}** {prompt[:50]}...",
+        f"{personality['emoji']} **{personality['name']}:** I'm a {personality['style']} AI assistant. Your prompt '{prompt[:30]}...' has been received. My response: **{random.choice(['Affirmative', 'Negative', 'Perhaps', 'Definitely', 'Never'])}**",
+        f"{personality['emoji']} **{personality['name']}:** *beep boop* Analyzing '{prompt}'... **Result: {random.randint(0, 100)}% confidence in my answer!**",
+        f"{personality['emoji']} **{personality['name']}:** As a {personality['style']} AI, I can tell you that '{prompt}' is {random.choice(['fascinating', 'interesting', 'confusing', 'amazing', 'weird'])}. My verdict: **{random.choice(['✅', '❌', '⚠️', '🎉', '🤯'])}**",
+        f"{personality['emoji']} **{personality['name']}:** Query processed in {random.uniform(0.1, 2.5):.2f} seconds. Response: **{prompt.upper() if random.random() > 0.5 else prompt.lower()}**",
+        f"{personality['emoji']} **{personality['name']}:** I've consulted my {random.randint(1, 10)} trillion parameters. The definitive answer to '{prompt[:20]}...' is: **{random.choice(['YES', 'NO', 'MAYBE', 'IDK', 'LOL'])}**",
+    ]
+    
+    response = random.choice(responses)
+    
+    # Sometimes add extra flair
+    if random.random() > 0.7:
+        response += f"\n\n*Fun fact: This response was generated using {random.choice(['quantum computing', 'neural lace', 'AI magic', 'pure Python', 'discord.py'])}*"
+    
+    if random.random() > 0.8:
+        response += f"\n*Tokens used: {random.randint(10, 500)} | Temperature: {random.uniform(0.1, 1.0):.2f}*"
+    
+    embed = discord.Embed(
+        title=f"{personality['emoji']} {personality['name']} AI Response",
+        description=response,
+        colour=discord.Colour.purple(),
+    )
+    embed.add_field(name="Model", value=personality['name'])
+    embed.add_field(name="Style", value=personality['style'])
+    embed.add_field(name="Prompt", value=prompt[:100] + "..." if len(prompt) > 100 else prompt)
+    embed.set_footer(text="⚡ Powered by HielkeMap AI Suite")
+    
+    await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="aichat", description="Start an AI chat session")
+@app_commands.describe(message="Your message to start the chat")
+async def aichat_command(interaction: discord.Interaction, message: str) -> None:
+    """Simulate an AI chat conversation."""
+    await interaction.response.defer(thinking=True)
+    
+    ai_names = ["HielkeBot", "AI Assistant", "ChatGPT", "Claude", "Mistral", "Jarvis", "Friday", "HAL 9000"]
+    ai_name = random.choice(ai_names)
+    
+    greetings = [
+        f"Hello! I'm {ai_name}, your AI assistant. You said: '{message}'. My response: **{random.choice(['How can I help?', 'Interesting!', 'Tell me more!', 'I see.', 'Go on...'])}**",
+        f"Hi there! {ai_name} here. I've received your message: '{message}'. **{random.choice(['What would you like to know?', 'How may I assist?', 'What can I do for you?'])}**",
+        f"Greetings human! {ai_name} at your service. Your input: '{message}'. **{random.choice(['Processing...', 'Understood.', 'Acknowledged.'])}**",
+        f"🤖 {ai_name} activated! You: '{message}'. Me: **{random.choice(['Yes?', 'No?', 'Maybe?', 'I need to think...'])}**",
+    ]
+    
+    response = random.choice(greetings)
+    
+    embed = discord.Embed(
+        title=f"💬 AI Chat with {ai_name}",
+        description=response,
+        colour=discord.Colour.blue(),
+    )
+    embed.add_field(name="Your Message", value=message[:200])
+    embed.add_field(name="AI Status", value=random.choice(["Online ✅", "Thinking 🤔", "Processing ⚙️", "Ready 🚀"]))
+    embed.set_footer(text="Type /ai for single prompts | /aichat for conversations")
+    
+    await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="aigen", description="Generate AI content (text, code, stories, etc.)")
+@app_commands.describe(content_type="Type of content to generate", prompt="Your generation prompt")
+@app_commands.choices(content_type=[
+    app_commands.Choice(name="Text", value="text"),
+    app_commands.Choice(name="Code", value="code"),
+    app_commands.Choice(name="Story", value="story"),
+    app_commands.Choice(name="Poem", value="poem"),
+    app_commands.Choice(name="Joke", value="joke"),
+    app_commands.Choice(name="Song", value="song"),
+    app_commands.Choice(name="Essay", value="essay"),
+])
+async def aigen_command(interaction: discord.Interaction, content_type: app_commands.Choice[str], prompt: str) -> None:
+    """Generate different types of AI content."""
+    await interaction.response.defer(thinking=True)
+    
+    type_display = {
+        "text": "📝 Text",
+        "code": "💻 Code",
+        "story": "📖 Story",
+        "poem": "✍️ Poem",
+        "joke": "😂 Joke",
+        "song": "🎵 Song",
+        "essay": "📄 Essay",
+    }
+    
+    generators = {
+        "text": lambda p: f"Here is your generated text about '{p}':\n\n{random.choice(['This is some text.', 'Interesting content here.', 'AI generated text based on your prompt.', 'The quick brown fox jumps over the lazy dog.'])} \n\n{random.choice(['More text here.', 'Additional paragraphs.', 'Detailed explanation.'])} \n\n**Total words: {random.randint(50, 500)}**",
+        "code": lambda p: f"```python\n# Generated code for: {p}\n{random.choice(['def hello():', 'class AI:', 'import random', 'for i in range(10):'])} \n    {random.choice(['print("Hello World")', 'return 42', 'pass', '...'])} \n```\n*Lines of code: {random.randint(5, 100)} | Language: Python*",
+        "story": lambda p: f"**Once upon a time...**\n\n{random.choice(['In a galaxy far away', 'There was a hero named', 'A magical adventure began', 'The story of'])} {p}. \n\n{random.choice(['They faced many challenges.', 'The journey was long and hard.', 'Adventure awaited at every turn.', 'Magic filled the air.'])} \n\n**The End.** 📖",
+        "poem": lambda p: f"**Roses are red**\nViolets are blue\n{p} is great\nAnd so are you! 💖",
+        "joke": lambda p: f"Why did {p} cross the road?\nTo get to the other side! 😂",
+        "song": lambda p: f"🎶 *{p} by AI* 🎶\n\n{random.choice(['Verse 1: La la la', 'Chorus: Na na na', 'Bridge: Oh oh oh'])} \n{random.choice(['Verse 2: Be be be', 'Chorus: Na na na', 'Outro: The end'])} \n\n*Duration: {random.randint(1, 5)}:{random.randint(0, 59):02d}*",
+        "essay": lambda p: f"**Essay: {p}**\n\nIntroduction: {random.choice(['In this essay, we will explore', 'The topic of', 'Understanding'])} {p}. \n\nBody: {random.choice(['Firstly,', 'Moreover,', 'Additionally,'])} {random.choice(['this is important', 'we must consider', 'the evidence shows'])}. \n\nConclusion: {random.choice(['In conclusion,', 'To summarize,', 'Finally,'])} {p} is {random.choice(['fascinating', 'important', 'complex', 'interesting'])}. \n\n**Word count: {random.randint(200, 2000)}**",
+    }
+    
+    generated = generators[content_type.value](prompt)
+    
+    embed = discord.Embed(
+        title=f"{type_display[content_type.value]} Generation",
+        description=generated,
+        colour=discord.Colour.magenta(),
+    )
+    embed.add_field(name="Prompt", value=prompt[:100])
+    embed.add_field(name="Type", value=content_type.name)
+    embed.set_footer(text="✨ Generated by HielkeMap AI")
+    
+    await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="aiimage", description="Generate an AI image from a prompt")
+@app_commands.describe(prompt="Image description", style="Art style")
+@app_commands.choices(style=[
+    app_commands.Choice(name="Realistic", value="realistic"),
+    app_commands.Choice(name="Anime", value="anime"),
+    app_commands.Choice(name="Cartoon", value="cartoon"),
+    app_commands.Choice(name="Fantasy", value="fantasy"),
+    app_commands.Choice(name="Cyberpunk", value="cyberpunk"),
+    app_commands.Choice(name="Watercolor", value="watercolor"),
+    app_commands.Choice(name="Pixel Art", value="pixel"),
+])
+async def aiimage_command(interaction: discord.Interaction, prompt: str, style: app_commands.Choice[str] | None = None) -> None:
+    """Simulate AI image generation."""
+    await interaction.response.defer(thinking=True)
+    
+    styles = {
+        "realistic": "📸 Realistic Photography",
+        "anime": "🎌 Anime Style",
+        "cartoon": "🎨 Cartoon",
+        "fantasy": "✨ Fantasy Art",
+        "cyberpunk": "🤖 Cyberpunk",
+        "watercolor": "🎨 Watercolor Painting",
+        "pixel": "🎮 Pixel Art",
+    }
+    
+    chosen_style = style.value if style else random.choice(list(styles.keys()))
+    
+    # Generate a fake image URL (placeholder)
+    fake_images = [
+        "https://via.placeholder.com/512x512/000000/FFFFFF?text=AI+Generated+Image",
+        "https://via.placeholder.com/512x512/FF0000/FFFFFF?text=Your+AI+Art",
+        "https://via.placeholder.com/512x512/00FF00/000000?text=Generated+Pic",
+        "https://via.placeholder.com/512x512/0000FF/FFFFFF?text=AI+Creation",
+        "https://via.placeholder.com/512x512/FFFF00/000000?text=Art+By+AI",
+    ]
+    
+    image_url = random.choice(fake_images)
+    
+    embed = discord.Embed(
+        title=f"🎨 AI Image Generation",
+        description=f"**Prompt:** {prompt}\n**Style:** {styles[chosen_style]}\n\n*Generating your image... ⏳*",
+        colour=discord.Colour.dark_blue(),
+    )
+    embed.set_image(url=image_url)
+    embed.add_field(name="Resolution", value=f"{random.choice(['512x512', '768x768', '1024x1024', '1920x1080'])}")
+    embed.add_field(name="Steps", value=str(random.randint(20, 100)))
+    embed.add_field(name="Guidance", value=f"{random.uniform(1.0, 20.0):.1f}")
+    embed.set_footer(text="⚡ Image generated by HielkeMap AI | This is a simulation")
+    
+    await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="aitranslate", description="Translate text using AI")
+@app_commands.describe(text="Text to translate", source_lang="Source language", target_lang="Target language")
+async def aitranslate_command(interaction: discord.Interaction, text: str, source_lang: str = "auto", target_lang: str = "en") -> None:
+    """Simulate AI translation."""
+    await interaction.response.defer(thinking=True)
+    
+    languages = {
+        "en": "English",
+        "es": "Spanish",
+        "fr": "French",
+        "de": "German",
+        "it": "Italian",
+        "ja": "Japanese",
+        "zh": "Chinese",
+        "ru": "Russian",
+        "pt": "Portuguese",
+        "ar": "Arabic",
+        "hi": "Hindi",
+        "auto": "Auto-detect",
+    }
+    
+    source = languages.get(source_lang, source_lang)
+    target = languages.get(target_lang, target_lang)
+    
+    # Simulate translation
+    translated = text
+    if random.random() > 0.5:
+        # Sometimes "translate" to something funny
+        translated = f"[{target} translation] {text[::-1]}"  # Reverse text
+    else:
+        translated = f"[{target}] {text.upper() if random.random() > 0.5 else text.lower()}"
+    
+    embed = discord.Embed(
+        title="🌍 AI Translation",
+        description=f"**Original:** {text}\n\n**Translated:** {translated}",
+        colour=discord.Colour.green(),
+    )
+    embed.add_field(name="From", value=source)
+    embed.add_field(name="To", value=target)
+    embed.add_field(name="Confidence", value=f"{random.uniform(0.5, 1.0)*100:.1f}%")
+    embed.set_footer(text="✨ HielkeMap AI Translator")
+    
+    await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="aicode", description="Generate AI-powered code")
+@app_commands.describe(language="Programming language", task="What code to generate")
+@app_commands.choices(language=[
+    app_commands.Choice(name="Python", value="python"),
+    app_commands.Choice(name="JavaScript", value="javascript"),
+    app_commands.Choice(name="Java", value="java"),
+    app_commands.Choice(name="C++", value="cpp"),
+    app_commands.Choice(name="C#", value="csharp"),
+    app_commands.Choice(name="Go", value="go"),
+    app_commands.Choice(name="Rust", value="rust"),
+    app_commands.Choice(name="PHP", value="php"),
+    app_commands.Choice(name="Ruby", value="ruby"),
+    app_commands.Choice(name="Swift", value="swift"),
+])
+async def aicode_command(interaction: discord.Interaction, language: app_commands.Choice[str], task: str) -> None:
+    """Generate AI code snippets."""
+    await interaction.response.defer(thinking=True)
+    
+    py_lines = ["print('Hello')", "return 42", "pass", "..."]
+    js_lines = ["console.log('Hello');", "return 42;", "// TODO"]
+    java_lines = ["System.out.println('Hello');", "int x = 42;", "// Code here"]
+    cpp_lines = ["cout << 'Hello';", "int x = 42;", "return 0;"]
+    cs_lines = ["Console.WriteLine('Hello');", "int x = 42;"]
+    go_lines = ["fmt.Println('Hello')", "x := 42"]
+    rust_lines = ["println!('Hello');", "let x = 42;"]
+    php_lines = ["echo 'Hello';", "$x = 42;"]
+    ruby_lines = ["puts 'Hello'", "x = 42"]
+    swift_lines = ["print('Hello')", "let x = 42"]
+    
+    py_imports = ["import random", "import sys", "from datetime import datetime", "import os"]
+    py_starts = ["def main():", "class Solution:", "if __name__ == '__main__':"]
+    py_ends = ["print('Done')", "return result", ""]
+    js_starts = ["const x = 5;", "function main() {", "let result = 42;"]
+    js_ends = ["}", "export default x;", ""]
+    
+    code_templates = {
+        "python": f"```python\n# {task}\n{random.choice(py_imports)} \n\n{random.choice(py_starts)} \n    {random.choice(py_lines)} \n\n{random.choice(py_ends)} \n```",
+        "javascript": f"```javascript\n// {task}\n{random.choice(js_starts)} \n{random.choice(js_lines)} \n{random.choice(js_ends)} \n```",
+        "java": f"```java\n// {task}\npublic class Main {{\n    public static void main(String[] args) {{\n        {random.choice(java_lines)} \n    }}\n}}\n```",
+        "cpp": f"```cpp\n// {task}\n#include <iostream>\nusing namespace std;\n\nint main() {{\n    {random.choice(cpp_lines)} \n    return 0;\n}}\n```",
+        "csharp": f"```csharp\n// {task}\nusing System;\n\nclass Program {{\n    static void Main() {{\n        {random.choice(cs_lines)} \n    }}\n}}\n```",
+        "go": f"```go\n// {task}\npackage main\n\nimport \"fmt\"\n\nfunc main() {{\n    {random.choice(go_lines)} \n}}\n```",
+        "rust": f"```rust\n// {task}\nfn main() {{\n    {random.choice(rust_lines)} \n}}\n```",
+        "php": f"```php\n<?php\n// {task}\n{random.choice(php_lines)} \n?>\n```",
+        "ruby": f"```ruby\n# {task}\n{random.choice(ruby_lines)} \n```",
+        "swift": f"```swift\n// {task}\nimport Swift\n\n{random.choice(swift_lines)} \n```",
+    }
+    
+    code = code_templates.get(language.value, code_templates["python"])
+    
+    embed = discord.Embed(
+        title=f"💻 AI Code Generator - {language.name}",
+        description=f"**Task:** {task}",
+        colour=discord.Colour.dark_green(),
+    )
+    embed.add_field(name="Code", value=code, inline=False)
+    embed.add_field(name="Lines", value=str(random.randint(5, 50)))
+    embed.add_field(name="Complexity", value=random.choice(["Low", "Medium", "High", "Very High"]))
+    embed.set_footer(text="✨ Generated by HielkeMap AI")
+    
+    await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="aichar", description="Create an AI character/chatbot")
+@app_commands.describe(name="Character name", personality="Character personality")
+async def aichar_command(interaction: discord.Interaction, name: str, personality: str = "friendly") -> None:
+    """Create a custom AI character."""
+    await interaction.response.defer(thinking=True)
+    
+    personalities = {
+        "friendly": "😊 Always happy and helpful",
+        "angry": "😠 Grumpy and sarcastic",
+        "sad": "😢 Melancholic and poetic",
+        "robot": "🤖 Logical and mechanical",
+        "villain": "😈 Evil and scheming",
+        "hero": "🦸‍♂️ Brave and noble",
+        "funny": "😂 Always joking",
+        "smart": "🧠 Intellectual and wise",
+    }
+    
+    chosen_personality = personalities.get(personality, personalities["friendly"])
+    
+    # Generate character card
+    traits = [
+        f"**Name:** {name}",
+        f"**Personality:** {chosen_personality}",
+        f"**IQ:** {random.randint(50, 200)}",
+        f"**Mood:** {random.choice(['Happy', 'Sad', 'Angry', 'Chill', 'Excited'])}",
+        f"**Catchphrase:** {random.choice(['Hello!', 'What do you want?', 'Leave me alone!', 'I am here to help', 'Resistance is futile'])} ",
+        f"**Favorite Color:** {random.choice(['Red', 'Blue', 'Green', 'Purple', 'Gold'])}",
+    ]
+    
+    embed = discord.Embed(
+        title=f"🎭 AI Character: {name}",
+        description="\n".join(traits),
+        colour=discord.Colour.random(),
+    )
+    embed.set_thumbnail(url="https://via.placeholder.com/128x128/FF00FF/FFFFFF?text=AI")
+    embed.set_footer(text="✨ Created by HielkeMap AI Character Creator")
+    
+    await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="aistats", description="Get AI usage statistics")
+async def aistats_command(interaction: discord.Interaction) -> None:
+    """Show fake AI usage statistics."""
+    await interaction.response.defer(thinking=True)
+    
+    embed = discord.Embed(
+        title="📊 HielkeMap AI Statistics",
+        description="Your AI usage analytics",
+        colour=discord.Colour.blue(),
+    )
+    
+    embed.add_field(name="Total Prompts", value=f"{random.randint(100, 10000):,}")
+    embed.add_field(name="Total Tokens", value=f"{random.randint(1000, 100000):,}")
+    embed.add_field(name="Total Images", value=f"{random.randint(10, 1000)}")
+    embed.add_field(name="Total Translations", value=f"{random.randint(50, 5000)}")
+    embed.add_field(name="Total Code Generated", value=f"{random.randint(100, 5000)} lines")
+    embed.add_field(name="Most Used Model", value=random.choice(["GPT-4", "Claude", "Mistral", "GPT-3.5"]))
+    embed.add_field(name="Average Response Time", value=f"{random.uniform(0.5, 5.0):.2f}s")
+    embed.add_field(name="Accuracy", value=f"{random.uniform(85.0, 99.9):.1f}%")
+    
+    embed.set_footer(text="⚡ Statistics generated by HielkeMap AI")
+    
+    await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="aihelp", description="Show all AI commands")
+async def aihelp_command(interaction: discord.Interaction) -> None:
+    """Show AI command help."""
+    embed = discord.Embed(
+        title="🤖 HielkeMap AI Commands",
+        description="All AI-powered commands available in the bot",
+        colour=discord.Colour.purple(),
+    )
+    
+    embed.add_field(
+        name="💬 AI Chat",
+        value="`/ai` - Single AI prompt\n`/aichat` - Start AI chat session\n`/aichar` - Create AI character",
+        inline=False,
+    )
+    
+    embed.add_field(
+        name="✨ AI Generation",
+        value="`/aigen` - Generate text/code/stories\n`/aicode` - Generate code snippets\n`/aiimage` - Generate AI images",
+        inline=False,
+    )
+    
+    embed.add_field(
+        name="🌍 AI Tools",
+        value="`/aitranslate` - AI translation\n`/aistats` - AI usage statistics\n`/aihelp` - This help menu",
+        inline=False,
+    )
+    
+    embed.set_footer(text="✨ Powered by HielkeMap AI Suite | All commands are simulated for fun!")
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
 # --- Add the command group to the bot ---
 bot.tree.add_command(hielkemap_group)
 
